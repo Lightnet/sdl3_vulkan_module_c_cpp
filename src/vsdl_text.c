@@ -73,23 +73,23 @@ static int create_font_atlas(VSDL_Context* ctx) {
       maxHeight = (ctx->ftFace->glyph->bitmap.rows > maxHeight) ? ctx->ftFace->glyph->bitmap.rows : maxHeight;
   }
 
-  SDL_Log("Font atlas pixel data (first 64x64):");
-  char line[65];
-  line[64] = '\0';
-  for (int row = 0; row < 64; row++) {
-      for (int col = 0; col < 64; col++) {
-          unsigned char pixel = ctx->fontAtlas.pixels[row * atlasWidth + col];
-          line[col] = (pixel > 0) ? '1' : '0';
-      }
-      SDL_Log("%s", line);
-  }
+  // SDL_Log("Font atlas pixel data (first 64x64):");
+  // char line[65];
+  // line[64] = '\0';
+  // for (int row = 0; row < 64; row++) {
+  //     for (int col = 0; col < 64; col++) {
+  //         unsigned char pixel = ctx->fontAtlas.pixels[row * atlasWidth + col];
+  //         line[col] = (pixel > 0) ? '1' : '0';
+  //     }
+  //     SDL_Log("%s", line);
+  // }
 
-  FILE* atlasFile = fopen("font_atlas.raw", "wb");
-  if (atlasFile) {
-      fwrite(ctx->fontAtlas.pixels, 1, atlasWidth * atlasHeight, atlasFile);
-      fclose(atlasFile);
-      SDL_Log("Saved font atlas to font_atlas.raw (%ux%u)", atlasWidth, atlasHeight);
-  }
+  // FILE* atlasFile = fopen("font_atlas.raw", "wb");
+  // if (atlasFile) {
+  //     fwrite(ctx->fontAtlas.pixels, 1, atlasWidth * atlasHeight, atlasFile);
+  //     fclose(atlasFile);
+  //     SDL_Log("Saved font atlas to font_atlas.raw (%ux%u)", atlasWidth, atlasHeight);
+  // }
 
   VkImageCreateInfo imageInfo = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -427,8 +427,8 @@ void vsdl_render_text(VSDL_Context* ctx, VkCommandBuffer commandBuffer, const ch
       float texW = glyph->w;
       float texH = glyph->h;
 
-      SDL_Log("Rendering '%c': pos=(%f, %f), size=(%f, %f), tex=(%f, %f, %f, %f)", 
-              c, xPos, yPos, w, h, texX, texY, texX + texW, texY + texH);
+      // SDL_Log("Rendering '%c': pos=(%f, %f), size=(%f, %f), tex=(%f, %f, %f, %f)", 
+      //         c, xPos, yPos, w, h, texX, texY, texX + texW, texY + texH);
 
       vertices[vertexCount++] = (TextVertex){{xPos, yPos}, {texX, texY}};
       vertices[vertexCount++] = (TextVertex){{xPos + w, yPos}, {texX + texW, texY}};

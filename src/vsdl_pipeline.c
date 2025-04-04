@@ -8,8 +8,8 @@
 
 int create_pipeline(VSDL_Context* ctx) {
     size_t vertSize, fragSize;
-    char* vertCode = readFile("shaders/tri.vert.spv", &vertSize);
-    char* fragCode = readFile("shaders/tri.frag.spv", &fragSize);
+    char* vertCode = readFile("shaders/shader2d.vert.spv", &vertSize);
+    char* fragCode = readFile("shaders/shader2d.frag.spv", &fragSize);
     if (!vertCode || !fragCode) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load shaders");
         free(vertCode);

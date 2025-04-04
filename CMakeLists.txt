@@ -118,8 +118,8 @@ endif()
 
 # Define shader files
 set(SHADER_FILES
-    ${SHADER_SRC_DIR}/tri.vert
-    ${SHADER_SRC_DIR}/tri.frag
+    ${SHADER_SRC_DIR}/shader2d.vert
+    ${SHADER_SRC_DIR}/shader2d.frag
     ${SHADER_SRC_DIR}/text.vert
     ${SHADER_SRC_DIR}/text.frag
 )
@@ -151,3 +151,19 @@ if(WIN32 AND TARGET SDL3::SDL3-shared)
         COMMENT "Copying SDL3.dll to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG> if needed"
     )
 endif()
+
+# Copy fonts folder to build output
+set(FONTS_SRC_DIR ${CMAKE_SOURCE_DIR}/fonts)
+set(FONTS_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/fonts)
+
+# Check if fonts directory exists
+if(NOT EXISTS ${FONTS_SRC_DIR})
+    message(WARNING "Fonts directory '${FONTS_SRC_DIR}' does not exist. Creating empty directory in build output.")
+endif()
+
+# Add custom command to copy fonts directory
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${FONTS_DEST_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_SRC_DIR} ${FONTS_DEST_DIR}
+    COMMENT "Copying fonts directory to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/fonts"
+)
