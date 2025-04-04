@@ -82,6 +82,7 @@ typedef struct {
     FT_Library ftLibrary;
     FT_Face ftFace;
     FontAtlas fontAtlas;
+    VkCommandBuffer commandBuffer;
 } VSDL_Context;
 
 #endif

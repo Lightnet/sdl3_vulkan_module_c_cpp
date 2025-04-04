@@ -11,11 +11,13 @@
 
 
 static int create_font_atlas(VSDL_Context* ctx) {
+  // Initialize FreeType
   if (FT_Init_FreeType(&ctx->ftLibrary)) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize FreeType");
       return 0;
   }
 
+  // Load font face
   if (FT_New_Face(ctx->ftLibrary, "fonts/Kenney Mini.ttf", 0, &ctx->ftFace)) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load font 'Kenney Mini.ttf'");
       FT_Done_FreeType(ctx->ftLibrary);
@@ -24,9 +26,16 @@ static int create_font_atlas(VSDL_Context* ctx) {
 
   FT_Set_Pixel_Sizes(ctx->ftFace, 0, 48);
 
+  // Create font atlas
   uint32_t atlasWidth = 512;
   uint32_t atlasHeight = 512;
   ctx->fontAtlas.pixels = (unsigned char*)calloc(atlasWidth * atlasHeight, sizeof(unsigned char));
+  if (!ctx->fontAtlas.pixels) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate font atlas pixels");
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
   ctx->fontAtlas.width = atlasWidth;
   ctx->fontAtlas.height = atlasHeight;
 
@@ -37,21 +46,29 @@ static int create_font_atlas(VSDL_Context* ctx) {
           continue;
       }
 
-      if ((uint32_t)x + ctx->ftFace->glyph->bitmap.width >= atlasWidth) { // Fix signed/unsigned
+      if (!ctx->ftFace->glyph->bitmap.buffer) {
+          ctx->fontAtlas.glyphs[c].x = 0.0f;
+          ctx->fontAtlas.glyphs[c].y = 0.0f;
+          ctx->fontAtlas.glyphs[c].w = 0.0f;
+          ctx->fontAtlas.glyphs[c].h = 0.0f;
+          ctx->fontAtlas.glyphs[c].advance = (float)(ctx->ftFace->glyph->advance.x >> 6);
+          ctx->fontAtlas.glyphs[c].bearingX = 0.0f;
+          ctx->fontAtlas.glyphs[c].bearingY = 0.0f;
+          continue;
+      }
+
+      if ((uint32_t)x + ctx->ftFace->glyph->bitmap.width >= atlasWidth) {
           x = 0;
           y += maxHeight + 1;
           maxHeight = 0;
       }
 
       if ((uint32_t)y + ctx->ftFace->glyph->bitmap.rows >= atlasHeight) {
-          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Font atlas too small");
+          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Font atlas too small for all glyphs");
           free(ctx->fontAtlas.pixels);
+          FT_Done_Face(ctx->ftFace);
+          FT_Done_FreeType(ctx->ftLibrary);
           return 0;
-      }
-
-      if (!ctx->ftFace->glyph->bitmap.buffer) {
-          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Glyph '%c' has no bitmap data", c);
-          continue;
       }
 
       for (unsigned int row = 0; row < ctx->ftFace->glyph->bitmap.rows; row++) {
@@ -73,24 +90,7 @@ static int create_font_atlas(VSDL_Context* ctx) {
       maxHeight = (ctx->ftFace->glyph->bitmap.rows > maxHeight) ? ctx->ftFace->glyph->bitmap.rows : maxHeight;
   }
 
-  // SDL_Log("Font atlas pixel data (first 64x64):");
-  // char line[65];
-  // line[64] = '\0';
-  // for (int row = 0; row < 64; row++) {
-  //     for (int col = 0; col < 64; col++) {
-  //         unsigned char pixel = ctx->fontAtlas.pixels[row * atlasWidth + col];
-  //         line[col] = (pixel > 0) ? '1' : '0';
-  //     }
-  //     SDL_Log("%s", line);
-  // }
-
-  // FILE* atlasFile = fopen("font_atlas.raw", "wb");
-  // if (atlasFile) {
-  //     fwrite(ctx->fontAtlas.pixels, 1, atlasWidth * atlasHeight, atlasFile);
-  //     fclose(atlasFile);
-  //     SDL_Log("Saved font atlas to font_atlas.raw (%ux%u)", atlasWidth, atlasHeight);
-  // }
-
+  // Create Vulkan image
   VkImageCreateInfo imageInfo = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   imageInfo.imageType = VK_IMAGE_TYPE_2D;
   imageInfo.format = VK_FORMAT_R8_UNORM;
@@ -109,19 +109,36 @@ static int create_font_atlas(VSDL_Context* ctx) {
   allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
   if (vmaCreateImage(ctx->allocator, &imageInfo, &allocInfo, &ctx->fontAtlas.texture, &ctx->fontAtlas.textureAllocation, NULL) != VK_SUCCESS) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create font texture");
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
       return 0;
   }
 
+  // Upload atlas to GPU
   VkCommandBuffer cmdBuffer;
   VkCommandBufferAllocateInfo cmdAllocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
   cmdAllocInfo.commandPool = ctx->commandPool;
   cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
   cmdAllocInfo.commandBufferCount = 1;
-  vkAllocateCommandBuffers(ctx->device, &cmdAllocInfo, &cmdBuffer);
+  if (vkAllocateCommandBuffers(ctx->device, &cmdAllocInfo, &cmdBuffer) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffer for font atlas");
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+  if (vkBeginCommandBuffer(cmdBuffer, &beginInfo) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to begin command buffer for font atlas");
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
   VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
   barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -136,7 +153,6 @@ static int create_font_atlas(VSDL_Context* ctx) {
   barrier.subresourceRange.layerCount = 1;
   barrier.srcAccessMask = 0;
   barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
   vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
   VkBuffer stagingBuffer;
@@ -148,10 +164,25 @@ static int create_font_atlas(VSDL_Context* ctx) {
   VmaAllocationCreateInfo stagingAllocInfo = {0};
   stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
   stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-  vmaCreateBuffer(ctx->allocator, &bufferInfo, &stagingAllocInfo, &stagingBuffer, &stagingAllocation, NULL);
+  if (vmaCreateBuffer(ctx->allocator, &bufferInfo, &stagingAllocInfo, &stagingBuffer, &stagingAllocation, NULL) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for font atlas");
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
   void* data;
-  vmaMapMemory(ctx->allocator, stagingAllocation, &data);
+  if (vmaMapMemory(ctx->allocator, stagingAllocation, &data) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to map staging buffer memory");
+      vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
   memcpy(data, ctx->fontAtlas.pixels, atlasWidth * atlasHeight);
   vmaUnmapMemory(ctx->allocator, stagingAllocation);
 
@@ -161,7 +192,6 @@ static int create_font_atlas(VSDL_Context* ctx) {
   copyRegion.imageExtent.width = atlasWidth;
   copyRegion.imageExtent.height = atlasHeight;
   copyRegion.imageExtent.depth = 1;
-
   vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer, ctx->fontAtlas.texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
   barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -170,22 +200,58 @@ static int create_font_atlas(VSDL_Context* ctx) {
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
   vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
-  vkEndCommandBuffer(cmdBuffer);
+  if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to end command buffer for font atlas");
+      vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
   VkFenceCreateInfo fenceInfo = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   VkFence fence;
-  vkCreateFence(ctx->device, &fenceInfo, NULL, &fence);
+  if (vkCreateFence(ctx->device, &fenceInfo, NULL, &fence) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create fence for font atlas");
+      vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
   VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &cmdBuffer;
-  vkQueueSubmit(ctx->graphicsQueue, 1, &submitInfo, fence);
-  vkWaitForFences(ctx->device, 1, &fence, VK_TRUE, UINT64_MAX);
+  if (vkQueueSubmit(ctx->graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to submit font atlas upload");
+      vkDestroyFence(ctx->device, fence, NULL);
+      vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
 
-  vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
-  vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+  if (vkWaitForFences(ctx->device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to wait for font atlas upload fence");
+      vkDestroyFence(ctx->device, fence, NULL);
+      vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
+      return 0;
+  }
+
   vkDestroyFence(ctx->device, fence, NULL);
+  vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+  vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &cmdBuffer);
 
+  // Create image view
   VkImageViewCreateInfo viewInfo = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
   viewInfo.image = ctx->fontAtlas.texture;
   viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -197,9 +263,13 @@ static int create_font_atlas(VSDL_Context* ctx) {
   viewInfo.subresourceRange.layerCount = 1;
   if (vkCreateImageView(ctx->device, &viewInfo, NULL, &ctx->fontAtlas.textureView) != VK_SUCCESS) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create font texture view");
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
       return 0;
   }
 
+  // Create sampler
   VkSamplerCreateInfo samplerInfo = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
   samplerInfo.magFilter = VK_FILTER_LINEAR;
   samplerInfo.minFilter = VK_FILTER_LINEAR;
@@ -211,6 +281,10 @@ static int create_font_atlas(VSDL_Context* ctx) {
   samplerInfo.maxLod = 0.0f;
   if (vkCreateSampler(ctx->device, &samplerInfo, NULL, &ctx->fontAtlas.sampler) != VK_SUCCESS) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create font sampler");
+      vkDestroyImageView(ctx->device, ctx->fontAtlas.textureView, NULL);
+      free(ctx->fontAtlas.pixels);
+      FT_Done_Face(ctx->ftFace);
+      FT_Done_FreeType(ctx->ftLibrary);
       return 0;
   }
 
@@ -220,63 +294,21 @@ static int create_font_atlas(VSDL_Context* ctx) {
 
 
 int vsdl_init_text(VSDL_Context* ctx) {
-    if (!create_font_atlas(ctx)) {
-        return 0;
-    }
+  // Create the font atlas
+  if (!create_font_atlas(ctx)) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create font atlas");
+      return 0;
+  }
 
-    VkDescriptorSetLayoutBinding layoutBinding = {0};
-    layoutBinding.binding = 0;
-    layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    layoutBinding.descriptorCount = 1;
-    layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  // Create the text pipeline
+  if (!vsdl_create_text_pipeline(ctx)) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create text pipeline");
+      return 0;
+  }
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &layoutBinding;
-    if (vkCreateDescriptorSetLayout(ctx->device, &layoutInfo, NULL, &ctx->descriptorSetLayout) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layout for text");
-        return 0;
-    }
-
-    VkDescriptorPoolSize poolSize = {0};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
-
-    VkDescriptorPoolCreateInfo poolInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    if (vkCreateDescriptorPool(ctx->device, &poolInfo, NULL, &ctx->descriptorPool) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor pool for text");
-        return 0;
-    }
-
-    VkDescriptorSetAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    allocInfo.descriptorPool = ctx->descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &ctx->descriptorSetLayout;
-    if (vkAllocateDescriptorSets(ctx->device, &allocInfo, &ctx->descriptorSet) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate descriptor set for text");
-        return 0;
-    }
-
-    VkDescriptorImageInfo imageInfo = {0};
-    imageInfo.sampler = ctx->fontAtlas.sampler;
-    imageInfo.imageView = ctx->fontAtlas.textureView;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet descriptorWrite = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptorWrite.dstSet = ctx->descriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.pImageInfo = &imageInfo;
-    vkUpdateDescriptorSets(ctx->device, 1, &descriptorWrite, 0, NULL);
-
-    SDL_Log("Text rendering initialized");
-    return 1;
+  SDL_Log("Text rendering initialized");
+  return 1;
 }
-
 
 
 int vsdl_create_text_pipeline(VSDL_Context* ctx) {

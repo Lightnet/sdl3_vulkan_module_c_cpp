@@ -9,9 +9,40 @@
 # Information:
   To build the module for SDL3 and Vulkan module as well some libraries.
 
-  Simple triangle test.
+  Simple triangle test and render text "hello".
 
   Using the c as base and c++ wrapper for c to handle and help c build api with minimal.
+
+# Project:
+```
+fonts
+-Kenney Mini.ttf
+include
+- vsdl_cleanup.h
+- vsdl_init.h
+- vsdl_mesh.h
+- vsdl_pipeline.h
+- vsdl_renderer.h
+- vsdl_text.h
+- vsdl_types.h
+- vsdl_utils.h
+shaders
+- shader2d.frag
+- shader2d.vert
+- text.frag
+- text.vert
+src
+- main.c
+- vma_impl.cpp
+- vsdl_cleanup.c
+- vsdl_init.c
+- vsdl_mesh.c
+- vsdl_pipeline.c
+- vsdl_renderer.c
+- vsdl_text.c
+- vsdl_utils.c
+CMakeLists.txt
+```
 
 # Libraries using c++:
  * volk
@@ -48,4 +79,5 @@
 
 # Credits:
  * https://vulkan-tutorial.com
+ * https://kenney.nl/assets/kenney-fonts 
  * 

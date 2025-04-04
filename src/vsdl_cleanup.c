@@ -6,18 +6,25 @@
 #include "vsdl_cleanup.h"
 #include "vsdl_types.h"
 
-static void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
-    PFN_vkDestroyDebugUtilsMessengerEXT func = 
-        (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != NULL) {
-        func(instance, debugMessenger, pAllocator);
-    }
-}
 
+static void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
+  PFN_vkDestroyDebugUtilsMessengerEXT func = 
+      (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+  if (func != NULL) {
+      func(instance, debugMessenger, pAllocator);
+  }
+}
 
 void vsdl_cleanup(VSDL_Context* ctx) {
   SDL_Log("init cleanup");
 
+  // Wait for all queue operations to complete
+  if (ctx->graphicsQueue) {
+      SDL_Log("Waiting for queue to idle");
+      vkQueueWaitIdle(ctx->graphicsQueue);
+  }
+
+  // Destroy synchronization objects
   if (ctx->frameFence) {
       SDL_Log("Destroying frame fence");
       vkDestroyFence(ctx->device, ctx->frameFence, NULL);
@@ -30,6 +37,14 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying image available semaphore");
       vkDestroySemaphore(ctx->device, ctx->imageAvailableSemaphore, NULL);
   }
+
+  // Destroy command buffer
+  if (ctx->commandBuffer) {
+      SDL_Log("Freeing command buffer");
+      vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &ctx->commandBuffer);
+  }
+
+  // Destroy buffers (triangle and text)
   if (ctx->textVertexBuffer) {
       SDL_Log("Destroying text vertex buffer");
       vmaDestroyBuffer(ctx->allocator, ctx->textVertexBuffer, ctx->textVertexBufferAllocation);
@@ -38,6 +53,8 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying vertex buffer");
       vmaDestroyBuffer(ctx->allocator, ctx->vertexBuffer, ctx->vertexBufferAllocation);
   }
+
+  // Destroy font atlas resources (text-specific)
   if (ctx->fontAtlas.sampler) {
       SDL_Log("Destroying font sampler");
       vkDestroySampler(ctx->device, ctx->fontAtlas.sampler, NULL);
@@ -62,18 +79,20 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying FreeType library");
       FT_Done_FreeType(ctx->ftLibrary);
   }
-  if (ctx->descriptorPool) {
-      SDL_Log("Destroying descriptor pool");
-      vkDestroyDescriptorPool(ctx->device, ctx->descriptorPool, NULL);
-  }
+
+  // Destroy pipelines (triangle and text)
   if (ctx->textPipeline) {
       SDL_Log("Destroying text pipeline");
       vkDestroyPipeline(ctx->device, ctx->textPipeline, NULL);
+      ctx->textPipeline = VK_NULL_HANDLE;
   }
   if (ctx->graphicsPipeline) {
       SDL_Log("Destroying graphics pipeline");
       vkDestroyPipeline(ctx->device, ctx->graphicsPipeline, NULL);
+      ctx->graphicsPipeline = VK_NULL_HANDLE;
   }
+
+  // Destroy pipeline-related objects
   if (ctx->pipelineLayout) {
       SDL_Log("Destroying pipeline layout");
       vkDestroyPipelineLayout(ctx->device, ctx->pipelineLayout, NULL);
@@ -82,6 +101,12 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying descriptor set layout");
       vkDestroyDescriptorSetLayout(ctx->device, ctx->descriptorSetLayout, NULL);
   }
+  if (ctx->descriptorPool) {
+      SDL_Log("Destroying descriptor pool");
+      vkDestroyDescriptorPool(ctx->device, ctx->descriptorPool, NULL);
+  }
+
+  // Destroy framebuffers and render pass
   if (ctx->framebuffers) {
       for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
           if (ctx->framebuffers[i]) {
@@ -95,6 +120,8 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying render pass");
       vkDestroyRenderPass(ctx->device, ctx->renderPass, NULL);
   }
+
+  // Destroy swapchain-related objects
   if (ctx->swapchainImageViews) {
       for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
           if (ctx->swapchainImageViews[i]) {
@@ -111,6 +138,8 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying swapchain");
       vkDestroySwapchainKHR(ctx->device, ctx->swapchain, NULL);
   }
+
+  // Destroy remaining device objects
   if (ctx->commandPool) {
       SDL_Log("Destroying command pool");
       vkDestroyCommandPool(ctx->device, ctx->commandPool, NULL);
@@ -123,6 +152,8 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying device");
       vkDestroyDevice(ctx->device, NULL);
   }
+
+  // Destroy instance-level objects
   if (ctx->surface) {
       SDL_Log("Destroying surface");
       vkDestroySurfaceKHR(ctx->instance, ctx->surface, NULL);
@@ -135,13 +166,14 @@ void vsdl_cleanup(VSDL_Context* ctx) {
       SDL_Log("Destroying instance");
       vkDestroyInstance(ctx->instance, NULL);
   }
+
+  // Destroy SDL window
   if (ctx->window) {
       SDL_Log("Destroying window");
       SDL_DestroyWindow(ctx->window);
   }
+
   SDL_Log("Quitting SDL");
   SDL_Quit();
 }
-
-
 

@@ -33,12 +33,25 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
   }
 
   void* data;
-  vmaMapMemory(ctx->allocator, ctx->vertexBufferAllocation, &data);
+  if (vmaMapMemory(ctx->allocator, ctx->vertexBufferAllocation, &data) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to map vertex buffer memory");
+      return 0;
+  }
   memcpy(data, vertices, sizeof(vertices));
   vmaUnmapMemory(ctx->allocator, ctx->vertexBufferAllocation);
 
+  // Create graphics pipeline
+  if (!vsdl_create_graphics_pipeline(ctx)) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create graphics pipeline");
+      return 0;
+  }
+
   // Create framebuffers
   ctx->framebuffers = (VkFramebuffer*)malloc(ctx->swapchainImageCount * sizeof(VkFramebuffer));
+  if (!ctx->framebuffers) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate framebuffer array");
+      return 0;
+  }
   for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
       VkImageView attachments[] = {ctx->swapchainImageViews[i]};
       VkFramebufferCreateInfo fbInfo = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
@@ -78,7 +91,7 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
       return 0;
   }
 
-  // Update descriptor set with font atlas
+  // Update descriptor set with font atlas (for text rendering)
   VkDescriptorImageInfo imageInfo = {0};
   imageInfo.sampler = ctx->fontAtlas.sampler;
   imageInfo.imageView = ctx->fontAtlas.textureView;
@@ -106,29 +119,54 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
       return 0;
   }
 
+  // Allocate persistent command buffer
+  VkCommandBufferAllocateInfo cmdAllocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+  cmdAllocInfo.commandPool = ctx->commandPool;
+  cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  cmdAllocInfo.commandBufferCount = 1;
+  if (vkAllocateCommandBuffers(ctx->device, &cmdAllocInfo, &ctx->commandBuffer) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffer");
+      return 0;
+  }
+
   SDL_Log("Renderer initialized");
   return 1;
 }
 
 void vsdl_draw_frame(VSDL_Context* ctx) {
-  vkWaitForFences(ctx->device, 1, &ctx->frameFence, VK_TRUE, UINT64_MAX);
+  // Wait for the previous frame to finish
+  VkResult result = vkWaitForFences(ctx->device, 1, &ctx->frameFence, VK_TRUE, UINT64_MAX);
+  if (result != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to wait for frame fence: %d", result);
+      return;
+  }
   vkResetFences(ctx->device, 1, &ctx->frameFence);
 
+  // Acquire the next swapchain image
   uint32_t imageIndex;
-  vkAcquireNextImageKHR(ctx->device, ctx->swapchain, UINT64_MAX, ctx->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+  result = vkAcquireNextImageKHR(ctx->device, ctx->swapchain, UINT64_MAX, ctx->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+  if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire next image: %d", result);
+      return;
+  }
 
-  VkCommandBufferAllocateInfo cmdAllocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-  cmdAllocInfo.commandPool = ctx->commandPool;
-  cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cmdAllocInfo.commandBufferCount = 1;
+  // Reset the persistent command buffer
+  result = vkResetCommandBuffer(ctx->commandBuffer, 0);
+  if (result != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to reset command buffer: %d", result);
+      return;
+  }
 
-  VkCommandBuffer commandBuffer;
-  vkAllocateCommandBuffers(ctx->device, &cmdAllocInfo, &commandBuffer);
-
+  // Begin command buffer recording
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+  result = vkBeginCommandBuffer(ctx->commandBuffer, &beginInfo);
+  if (result != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to begin command buffer: %d", result);
+      return;
+  }
 
+  // Begin render pass
   VkRenderPassBeginInfo renderPassInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
   renderPassInfo.renderPass = ctx->renderPass;
   renderPassInfo.framebuffer = ctx->framebuffers[imageIndex];
@@ -138,21 +176,27 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   renderPassInfo.clearValueCount = 1;
   renderPassInfo.pClearValues = &clearColor;
 
-  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(ctx->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
   // Draw triangle
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->graphicsPipeline);
+  vkCmdBindPipeline(ctx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->graphicsPipeline);
   VkBuffer vertexBuffers[] = {ctx->vertexBuffer};
   VkDeviceSize offsets[] = {0};
-  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-  vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+  vkCmdBindVertexBuffers(ctx->commandBuffer, 0, 1, vertexBuffers, offsets);
+  vkCmdDraw(ctx->commandBuffer, 3, 1, 0, 0);
 
   // Draw text
-  vsdl_render_text(ctx, commandBuffer, "Hello", -0.5f, -0.5f);
+  vsdl_render_text(ctx, ctx->commandBuffer, "Hello", -0.5f, -0.5f);
 
-  vkCmdEndRenderPass(commandBuffer);
-  vkEndCommandBuffer(commandBuffer);
+  // End render pass and command buffer
+  vkCmdEndRenderPass(ctx->commandBuffer);
+  result = vkEndCommandBuffer(ctx->commandBuffer);
+  if (result != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to end command buffer: %d", result);
+      return;
+  }
 
+  // Submit the command buffer
   VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
   VkSemaphore waitSemaphores[] = {ctx->imageAvailableSemaphore};
   VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -160,23 +204,28 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   submitInfo.pWaitSemaphores = waitSemaphores;
   submitInfo.pWaitDstStageMask = waitStages;
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
+  submitInfo.pCommandBuffers = &ctx->commandBuffer;
   VkSemaphore signalSemaphores[] = {ctx->renderFinishedSemaphore};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
 
-  vkQueueSubmit(ctx->graphicsQueue, 1, &submitInfo, ctx->frameFence);
+  result = vkQueueSubmit(ctx->graphicsQueue, 1, &submitInfo, ctx->frameFence);
+  if (result != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to submit queue: %d", result);
+      return;
+  }
 
+  // Present the frame
   VkPresentInfoKHR presentInfo = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pWaitSemaphores = signalSemaphores;
   presentInfo.swapchainCount = 1;
   presentInfo.pSwapchains = &ctx->swapchain;
   presentInfo.pImageIndices = &imageIndex;
-  vkQueuePresentKHR(ctx->graphicsQueue, &presentInfo);
 
-  vkFreeCommandBuffers(ctx->device, ctx->commandPool, 1, &commandBuffer);
+  result = vkQueuePresentKHR(ctx->graphicsQueue, &presentInfo);
+  if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present queue: %d", result);
+      return;
+  }
 }
-
-
-
