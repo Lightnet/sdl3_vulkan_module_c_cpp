@@ -251,6 +251,7 @@ int vsdl_init(VSDL_Context* ctx) {
             return 0;
         }
     }
+    ctx->swapchainImageViewCount = ctx->swapchainImageCount; // Add this line
     SDL_Log("Swapchain image views created (count: %u)", ctx->swapchainImageCount);
 
     VkAttachmentDescription colorAttachment = {0};

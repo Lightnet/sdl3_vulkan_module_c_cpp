@@ -9,7 +9,6 @@
 #include <cimgui.h>
 #include <cimgui_impl.h>
 
-
 int vsdl_init_renderer(VSDL_Context* ctx) {
   Vertex vertices[] = {
       {{ 0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -63,6 +62,7 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
           return 0;
       }
   }
+  ctx->framebufferCount = ctx->swapchainImageCount; // Set the count here
 
   VkDescriptorSetAllocateInfo allocInfoDS = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
   allocInfoDS.descriptorPool = ctx->descriptorPool;
@@ -111,6 +111,7 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
   SDL_Log("Renderer initialized");
   return 1;
 }
+
 
 
 

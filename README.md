@@ -7,14 +7,16 @@
  * VS2022 c/c++
 
 # Information:
-  To build the module for SDL3 and Vulkan module as well some libraries.
-
-  Simple triangle test and render text "hello".
+  
+  Simple triangle test, render text "hello" and cimgui for graphic user interface.
 
   Using the c as base and c++ wrapper for c to handle and help c build api with minimal.
 
+# Goal:
+  To create module design for 3D world build test. To build the module for SDL3 and Vulkan module as well some libraries.
+
 # Image:
-![Screenshot Test](screenshots/sdl3_v_m_image01.png)
+![Screenshot Test](screenshots/sdl3_v_m_image02.png)
 
 # Project:
 ```
@@ -48,7 +50,6 @@ CMakeLists.txt
 ```
 
 # Libraries using c++:
- * volk
  * VulkanMemoryAllocator
 
   Using the VulkanMemoryAllocator. https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
@@ -58,7 +59,7 @@ CMakeLists.txt
 
 # Libraries:
  * SDL (added)
- * volk (added)
+ * volk (remove)
  * VulkanHeaders (added)
  * VulkanMemoryAllocator (added)
  * mimalloc (not added)
