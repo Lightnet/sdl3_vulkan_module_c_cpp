@@ -48,6 +48,18 @@ CPMAddPackage(
     GIT_TAG vulkan-sdk-1.4.304.1
 )
 
+CPMAddPackage(
+    NAME freetype
+    GITHUB_REPOSITORY freetype/freetype
+    GIT_TAG VER-2-13-3
+    OPTIONS
+      "FT_DISABLE_ZLIB TRUE"
+      "FT_DISABLE_BZIP2 TRUE"
+      "FT_DISABLE_PNG TRUE"
+      "FT_DISABLE_HARFBUZZ TRUE"
+      "FT_DISABLE_BROTLI TRUE"
+)
+
 # Find Vulkan from the system
 find_package(Vulkan REQUIRED)
 
@@ -61,6 +73,8 @@ set(SRC_FILES
   ${SOURCE_DIR}/vsdl_mesh.c
   ${SOURCE_DIR}/vsdl_pipeline.c
   ${SOURCE_DIR}/vsdl_cleanup.c
+  ${SOURCE_DIR}/vsdl_text.c
+  ${SOURCE_DIR}/vsdl_utils.c
   ${SOURCE_DIR}/vma_impl.cpp
 )
 
@@ -75,6 +89,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
     volk
+    freetype
 )
 
 # Include directories with proper path validation
@@ -105,6 +120,8 @@ endif()
 set(SHADER_FILES
     ${SHADER_SRC_DIR}/tri.vert
     ${SHADER_SRC_DIR}/tri.frag
+    ${SHADER_SRC_DIR}/text.vert
+    ${SHADER_SRC_DIR}/text.frag
 )
 
 # Compile shaders
