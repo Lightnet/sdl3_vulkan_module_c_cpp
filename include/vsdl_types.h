@@ -2,9 +2,9 @@
 #define VSDL_TYPES_H
 
 #include <SDL3/SDL.h>
-#define VK_NO_PROTOTYPES
+// #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-#include <volk.h>
+// #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -83,6 +83,7 @@ typedef struct {
     FT_Face ftFace;
     FontAtlas fontAtlas;
     VkCommandBuffer commandBuffer;
+    VkDescriptorPool imguiDescriptorPool; // Optional, if not using ctx->descriptorPool
 } VSDL_Context;
 
 #endif

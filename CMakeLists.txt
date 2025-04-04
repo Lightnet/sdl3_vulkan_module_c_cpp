@@ -36,11 +36,11 @@ CPMAddPackage(
     GIT_TAG v3.2.1
 )
 
-CPMAddPackage(
-    NAME volk
-    GITHUB_REPOSITORY zeux/volk
-    GIT_TAG 1.4.304
-)
+# CPMAddPackage(
+#     NAME volk
+#     GITHUB_REPOSITORY zeux/volk
+#     GIT_TAG 1.4.304
+# )
 
 CPMAddPackage(
     NAME VulkanHeaders
@@ -60,8 +60,58 @@ CPMAddPackage(
       "FT_DISABLE_BROTLI TRUE"
 )
 
+CPMAddPackage(
+    NAME cimgui
+    GITHUB_REPOSITORY cimgui/cimgui
+    GIT_TAG 1.91.9
+    DOWNLOAD_ONLY TRUE
+)
+
 # Find Vulkan from the system
 find_package(Vulkan REQUIRED)
+
+# cimgui library
+set(CIMGUI_SRC
+    ${cimgui_SOURCE_DIR}/cimgui.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_draw.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_demo.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_widgets.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_tables.cpp
+    ${cimgui_SOURCE_DIR}/imgui/backends/imgui_impl_sdl3.cpp
+    ${cimgui_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.cpp
+    ${cimgui_SOURCE_DIR}/imgui/misc/freetype/imgui_freetype.cpp
+)
+
+add_library(cimgui_lib STATIC ${CIMGUI_SRC})
+target_compile_definitions(cimgui_lib PUBLIC
+    -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
+    -DCIMGUI_USE_VULKAN
+    -DCIMGUI_USE_SDL3
+    -DCIMGUI_FREETYPE=1
+    "-DIMGUI_USER_CONFIG=\"${cimgui_SOURCE_DIR}/cimconfig.h\""
+)
+target_include_directories(cimgui_lib PUBLIC
+    ${cimgui_SOURCE_DIR}
+    ${cimgui_SOURCE_DIR}/imgui
+    ${cimgui_SOURCE_DIR}/imgui/backends
+    ${SDL3_SOURCE_DIR}/include
+    ${VulkanHeaders_SOURCE_DIR}/include
+)
+target_link_libraries(cimgui_lib PUBLIC
+    SDL3::SDL3
+    Vulkan::Vulkan
+    # volk
+    freetype
+)
+
+if (WIN32)
+    target_compile_definitions(cimgui_lib PUBLIC "-DIMGUI_IMPL_API=extern \"C\" __declspec\(dllexport\)")
+else(WIN32)
+    target_compile_definitions(cimgui_lib PUBLIC "-DIMGUI_IMPL_API=extern \"C\" ")
+endif(WIN32)
+
+
 
 # Define source and include directories
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/src)
@@ -84,12 +134,19 @@ add_executable(${PROJECT_NAME}
   ${SRC_FILES}
 )
 
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    -DCIMGUI_DEFINE_ENUMS_AND_STRUCTS
+    -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
+)
+
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
-    volk
+    # volk
     freetype
+    # cimgui
+    cimgui_lib
 )
 
 # Include directories with proper path validation
@@ -97,7 +154,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${INCLUDE_DIR}
     ${SDL3_SOURCE_DIR}/include
     ${VMA_SOURCE_DIR}/include
-    ${volk_SOURCE_DIR}
+    # ${volk_SOURCE_DIR}
     ${VulkanHeaders_SOURCE_DIR}/include
     ${Vulkan_INCLUDE_DIRS}
 )

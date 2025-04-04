@@ -1,6 +1,6 @@
-#define VK_NO_PROTOTYPES
+// #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-#include <volk.h>
+// #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <SDL3/SDL_log.h>
 #include "vsdl_cleanup.h"
@@ -17,6 +17,12 @@ static void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMesse
 
 void vsdl_cleanup(VSDL_Context* ctx) {
   SDL_Log("init cleanup");
+
+  SDL_Log("Shutting down ImGui");
+  ImGui_ImplVulkan_DestroyFontsTexture();
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  igDestroyContext(NULL);
 
   // Wait for all queue operations to complete
   if (ctx->graphicsQueue) {

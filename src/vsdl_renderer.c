@@ -1,21 +1,20 @@
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
-#include <volk.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <SDL3/SDL_log.h>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include "vsdl_renderer.h"
 #include "vsdl_types.h"
 #include "vsdl_text.h"
 #include "vsdl_pipeline.h"
+#include <cimgui.h>
+#include <cimgui_impl.h>
 
 
 int vsdl_init_renderer(VSDL_Context* ctx) {
-  // Create triangle vertex buffer
   Vertex vertices[] = {
-      {{ 0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}}, // Top, red
-      {{ 0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}}, // Bottom right, green
-      {{-0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}  // Bottom left, blue
+      {{ 0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+      {{ 0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+      {{-0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}
   };
 
   VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -40,13 +39,11 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
   memcpy(data, vertices, sizeof(vertices));
   vmaUnmapMemory(ctx->allocator, ctx->vertexBufferAllocation);
 
-  // Create graphics pipeline
   if (!vsdl_create_graphics_pipeline(ctx)) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create graphics pipeline");
       return 0;
   }
 
-  // Create framebuffers
   ctx->framebuffers = (VkFramebuffer*)malloc(ctx->swapchainImageCount * sizeof(VkFramebuffer));
   if (!ctx->framebuffers) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate framebuffer array");
@@ -67,21 +64,6 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
       }
   }
 
-  // Create descriptor pool
-  VkDescriptorPoolSize poolSize = {0};
-  poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSize.descriptorCount = 1;
-
-  VkDescriptorPoolCreateInfo poolInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-  poolInfo.maxSets = 1;
-  poolInfo.poolSizeCount = 1;
-  poolInfo.pPoolSizes = &poolSize;
-  if (vkCreateDescriptorPool(ctx->device, &poolInfo, NULL, &ctx->descriptorPool) != VK_SUCCESS) {
-      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor pool");
-      return 0;
-  }
-
-  // Allocate descriptor set
   VkDescriptorSetAllocateInfo allocInfoDS = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
   allocInfoDS.descriptorPool = ctx->descriptorPool;
   allocInfoDS.descriptorSetCount = 1;
@@ -91,7 +73,6 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
       return 0;
   }
 
-  // Update descriptor set with font atlas (for text rendering)
   VkDescriptorImageInfo imageInfo = {0};
   imageInfo.sampler = ctx->fontAtlas.sampler;
   imageInfo.imageView = ctx->fontAtlas.textureView;
@@ -107,7 +88,6 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
 
   vkUpdateDescriptorSets(ctx->device, 1, &descriptorWrite, 0, NULL);
 
-  // Create synchronization objects
   VkSemaphoreCreateInfo semaphoreInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   VkFenceCreateInfo fenceInfo = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -119,7 +99,6 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
       return 0;
   }
 
-  // Allocate persistent command buffer
   VkCommandBufferAllocateInfo cmdAllocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
   cmdAllocInfo.commandPool = ctx->commandPool;
   cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -132,6 +111,8 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
   SDL_Log("Renderer initialized");
   return 1;
 }
+
+
 
 void vsdl_draw_frame(VSDL_Context* ctx) {
   // Wait for the previous frame to finish
@@ -185,8 +166,22 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   vkCmdBindVertexBuffers(ctx->commandBuffer, 0, 1, vertexBuffers, offsets);
   vkCmdDraw(ctx->commandBuffer, 3, 1, 0, 0);
 
-  // Draw text
+  // Draw text (optional, if keeping custom text rendering)
   vsdl_render_text(ctx, ctx->commandBuffer, "Hello", -0.5f, -0.5f);
+
+  // ImGui frame
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplSDL3_NewFrame();
+  igNewFrame();
+
+  // Example ImGui UI
+  igBegin("Test Window", NULL, 0);
+  igText("Hello, ImGui!");
+  igEnd();
+
+  igRender();
+  ImDrawData* draw_data = igGetDrawData();
+  ImGui_ImplVulkan_RenderDrawData(draw_data, ctx->commandBuffer, VK_NULL_HANDLE);
 
   // End render pass and command buffer
   vkCmdEndRenderPass(ctx->commandBuffer);
@@ -229,3 +224,5 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
       return;
   }
 }
+
+

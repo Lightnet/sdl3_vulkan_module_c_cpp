@@ -1,6 +1,6 @@
-#define VK_NO_PROTOTYPES
+// #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-#include <volk.h>
+// #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <SDL3/SDL_log.h>
 #include "vsdl_mesh.h"

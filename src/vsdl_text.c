@@ -1,6 +1,6 @@
-#define VK_NO_PROTOTYPES
+// #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-#include <volk.h>
+// #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <SDL3/SDL_log.h>
 #include <ft2build.h>
@@ -310,7 +310,6 @@ int vsdl_init_text(VSDL_Context* ctx) {
   return 1;
 }
 
-
 int vsdl_create_text_pipeline(VSDL_Context* ctx) {
   size_t vertSize, fragSize;
   char* vertCode = readFile("shaders/text.vert.spv", &vertSize);
@@ -401,6 +400,44 @@ int vsdl_create_text_pipeline(VSDL_Context* ctx) {
   colorBlending.attachmentCount = 1;
   colorBlending.pAttachments = &colorBlendAttachment;
 
+  // Create descriptor set layout for font texture
+  VkDescriptorSetLayoutBinding samplerBinding = {0};
+  samplerBinding.binding = 0;
+  samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerBinding.descriptorCount = 1;
+  samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  samplerBinding.pImmutableSamplers = NULL;
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layoutInfo.bindingCount = 1;
+  layoutInfo.pBindings = &samplerBinding;
+  if (vkCreateDescriptorSetLayout(ctx->device, &layoutInfo, NULL, &ctx->descriptorSetLayout) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layout for text");
+      vkDestroyShaderModule(ctx->device, fragModule, NULL);
+      vkDestroyShaderModule(ctx->device, vertModule, NULL);
+      free(vertCode);
+      free(fragCode);
+      return 0;
+  }
+
+  // Create text pipeline layout
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &ctx->descriptorSetLayout;
+  pipelineLayoutInfo.pushConstantRangeCount = 0;
+  pipelineLayoutInfo.pPushConstantRanges = NULL;
+
+  if (vkCreatePipelineLayout(ctx->device, &pipelineLayoutInfo, NULL, &ctx->textPipelineLayout) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create text pipeline layout");
+      vkDestroyDescriptorSetLayout(ctx->device, ctx->descriptorSetLayout, NULL);
+      vkDestroyShaderModule(ctx->device, fragModule, NULL);
+      vkDestroyShaderModule(ctx->device, vertModule, NULL);
+      free(vertCode);
+      free(fragCode);
+      return 0;
+  }
+  SDL_Log("Text pipeline layout created");
+
   VkGraphicsPipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
   pipelineInfo.stageCount = 2;
   pipelineInfo.pStages = shaderStages;
@@ -410,12 +447,14 @@ int vsdl_create_text_pipeline(VSDL_Context* ctx) {
   pipelineInfo.pRasterizationState = &rasterizer;
   pipelineInfo.pMultisampleState = &multisampling;
   pipelineInfo.pColorBlendState = &colorBlending;
-  pipelineInfo.layout = ctx->pipelineLayout;
-  pipelineInfo.renderPass = ctx->renderPass; // Use render pass
+  pipelineInfo.layout = ctx->textPipelineLayout; // Use dedicated text pipeline layout
+  pipelineInfo.renderPass = ctx->renderPass;
   pipelineInfo.subpass = 0;
 
   if (vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &ctx->textPipeline) != VK_SUCCESS) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create text pipeline");
+      vkDestroyPipelineLayout(ctx->device, ctx->textPipelineLayout, NULL);
+      vkDestroyDescriptorSetLayout(ctx->device, ctx->descriptorSetLayout, NULL);
       vkDestroyShaderModule(ctx->device, fragModule, NULL);
       vkDestroyShaderModule(ctx->device, vertModule, NULL);
       free(vertCode);
@@ -431,7 +470,6 @@ int vsdl_create_text_pipeline(VSDL_Context* ctx) {
   SDL_Log("Text pipeline created");
   return 1;
 }
-
 
 
 void vsdl_render_text(VSDL_Context* ctx, VkCommandBuffer commandBuffer, const char* text, float x, float y) {
@@ -498,7 +536,7 @@ void vsdl_render_text(VSDL_Context* ctx, VkCommandBuffer commandBuffer, const ch
   free(vertices);
 
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->textPipeline);
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->pipelineLayout, 0, 1, &ctx->descriptorSet, 0, NULL);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->textPipelineLayout, 0, 1, &ctx->descriptorSet, 0, NULL);
 
   VkBuffer vertexBuffers[] = {ctx->textVertexBuffer};
   VkDeviceSize offsets[] = {0};
