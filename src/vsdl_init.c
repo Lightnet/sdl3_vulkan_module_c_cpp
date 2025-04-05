@@ -7,6 +7,7 @@
 #include "vsdl_text.h"
 #include <cimgui.h>
 #include <cimgui_impl.h>
+#include "vsdl_cimgui.h"  // Add this
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -311,53 +312,13 @@ int vsdl_init(VSDL_Context* ctx) {
     }
     SDL_Log("Descriptor pool created");
 
-    SDL_Log("Initializing ImGui");
-    SDL_Log("Creating ImGui context");
-    igCreateContext(NULL);
-    
-    SDL_Log("Retrieving ImGui IO");
-    ImGuiIO* io = igGetIO();
-    if (!io) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to retrieve ImGui IO");
-        return 0;
+     // Initialize ImGui via module
+     if (!vsdl_cimgui_init(ctx)) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize ImGui module");
+      vkDestroyDescriptorPool(ctx->device, ctx->descriptorPool, NULL);
+      // ... (rest of cleanup on failure)
+      return 0;
     }
-
-    SDL_Log("Initializing ImGui SDL3 backend");
-    if (!ImGui_ImplSDL3_InitForVulkan(ctx->window)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize ImGui SDL3 backend");
-        return 0;
-    }
-
-    SDL_Log("Setting up ImGui Vulkan backend");
-    ImGui_ImplVulkan_InitInfo init_info = {0};
-    init_info.Instance = ctx->instance;
-    init_info.PhysicalDevice = ctx->physicalDevice;
-    init_info.Device = ctx->device;
-    init_info.QueueFamily = ctx->graphicsFamily;
-    init_info.Queue = ctx->graphicsQueue;
-    init_info.DescriptorPool = ctx->descriptorPool;
-    init_info.RenderPass = ctx->renderPass;
-    init_info.MinImageCount = 2;
-    init_info.ImageCount = ctx->swapchainImageCount;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.Subpass = 0;
-    init_info.Allocator = NULL;
-    init_info.CheckVkResultFn = checkVkResult;
-
-    SDL_Log("Calling ImGui_ImplVulkan_Init");
-    if (!ImGui_ImplVulkan_Init(&init_info)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize ImGui Vulkan backend");
-        return 0;
-    }
-    SDL_Log("ImGui Vulkan backend initialized");
-
-    SDL_Log("Creating ImGui fonts texture");
-    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create ImGui fonts texture");
-        return 0;
-    }
-    SDL_Log("ImGui fonts texture created");
 
     SDL_Log("vsdl_init completed");
     return 1;

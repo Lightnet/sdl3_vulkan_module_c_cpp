@@ -50,11 +50,15 @@ CMakeLists.txt
 ```
 
 # Features:
+ * module design
  * cimgui
  * triangle
  * render text
 
   Need to add some features.
+
+# Module design:
+ To keep thing simple for add or remove module to debug or config correctly to develop application. 
 
 
 # Libraries using c++:
@@ -71,7 +75,7 @@ CMakeLists.txt
  * VulkanHeaders (added)
  * VulkanMemoryAllocator (added)
  * mimalloc (not added)
- * freetype (not added)
+ * freetype (added)
  * cglm (not added)
  * assimp (not added)
  * 

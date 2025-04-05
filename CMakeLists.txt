@@ -123,6 +123,7 @@ set(SRC_FILES
   ${SOURCE_DIR}/vsdl_mesh.c
   ${SOURCE_DIR}/vsdl_pipeline.c
   ${SOURCE_DIR}/vsdl_cleanup.c
+  ${SOURCE_DIR}/vsdl_cimgui.c
   ${SOURCE_DIR}/vsdl_text.c
   ${SOURCE_DIR}/vsdl_utils.c
   ${SOURCE_DIR}/vma_impl.cpp

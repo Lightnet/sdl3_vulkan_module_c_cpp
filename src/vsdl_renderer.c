@@ -8,6 +8,7 @@
 #include "vsdl_pipeline.h"
 #include <cimgui.h>
 #include <cimgui_impl.h>
+#include "vsdl_cimgui.h"
 
 int vsdl_init_renderer(VSDL_Context* ctx) {
   Vertex vertices[] = {
@@ -250,8 +251,6 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
       return;
   }
 
-  
-
   // Reset the persistent command buffer
   result = vkResetCommandBuffer(ctx->commandBuffer, 0);
   if (result != VK_SUCCESS) {
@@ -290,18 +289,14 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   // Draw text
   vsdl_render_text(ctx, ctx->commandBuffer, "Hello", -0.5f, -0.5f);
 
-  // ImGui frame
-  ImGui_ImplVulkan_NewFrame();
-  ImGui_ImplSDL3_NewFrame();
-  igNewFrame();
+  // ImGui frame via module
+  vsdl_cimgui_new_frame();
 
   igBegin("Test Window", NULL, 0);
   igText("Hello, ImGui!");
   igEnd();
 
-  igRender();
-  ImDrawData* draw_data = igGetDrawData();
-  ImGui_ImplVulkan_RenderDrawData(draw_data, ctx->commandBuffer, VK_NULL_HANDLE);
+  vsdl_cimgui_render(ctx, ctx->commandBuffer);
 
   // End render pass and command buffer
   vkCmdEndRenderPass(ctx->commandBuffer);

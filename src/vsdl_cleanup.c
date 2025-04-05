@@ -4,7 +4,7 @@
 #include "vsdl_types.h"
 #include <cimgui.h>
 #include <cimgui_impl.h>
-
+#include "vsdl_cimgui.h"
 
 static void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
   PFN_vkDestroyDebugUtilsMessengerEXT func = 
@@ -18,16 +18,8 @@ static void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMesse
 void vsdl_cleanup(VSDL_Context* ctx) {
   SDL_Log("init cleanup");
 
-  // Shut down ImGui and ensure all device operations are complete
-  SDL_Log("Shutting down ImGui");
-  if (ctx->device != VK_NULL_HANDLE && ctx->frameFence != VK_NULL_HANDLE) {
-    vkWaitForFences(ctx->device, 1, &ctx->frameFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(ctx->device, 1, &ctx->frameFence);
-  }
-  
-  ImGui_ImplVulkan_Shutdown();
-  ImGui_ImplSDL3_Shutdown();
-  igDestroyContext(NULL);
+  // Shut down ImGui via module and ensure all device operations are complete
+  vsdl_cimgui_shutdown(ctx);
 
   SDL_Log("Waiting for queue to idle");
   if (ctx->device != VK_NULL_HANDLE && ctx->graphicsQueue != VK_NULL_HANDLE) {
