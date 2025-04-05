@@ -49,6 +49,14 @@ src
 CMakeLists.txt
 ```
 
+# Features:
+ * cimgui
+ * triangle
+ * render text
+
+  Need to add some features.
+
+
 # Libraries using c++:
  * VulkanMemoryAllocator
 
