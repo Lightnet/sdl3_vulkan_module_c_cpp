@@ -51,11 +51,12 @@ int vsdl_init(VSDL_Context* ctx) {
     }
 
     SDL_Log("vsdl_init SDL_CreateWindow");
-    ctx->window = SDL_CreateWindow("Vulkan Triangle", 800, 600, SDL_WINDOW_VULKAN);
+    ctx->window = SDL_CreateWindow("Vulkan Triangle", 800, 600, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE );
     if (!ctx->window) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window creation failed: %s", SDL_GetError());
         return 0;
     }
+    //SDL_SetWindowResizable(ctx->window, 1);
 
     VkApplicationInfo appInfo = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
     appInfo.pApplicationName = "Vulkan SDL3";

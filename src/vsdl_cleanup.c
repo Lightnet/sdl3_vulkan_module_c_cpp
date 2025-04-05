@@ -20,8 +20,10 @@ void vsdl_cleanup(VSDL_Context* ctx) {
 
   // Shut down ImGui and ensure all device operations are complete
   SDL_Log("Shutting down ImGui");
-  vkWaitForFences(ctx->device, 1, &ctx->frameFence, VK_TRUE, UINT64_MAX);
-  vkResetFences(ctx->device, 1, &ctx->frameFence);
+  if (ctx->device != VK_NULL_HANDLE && ctx->frameFence != VK_NULL_HANDLE) {
+    vkWaitForFences(ctx->device, 1, &ctx->frameFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(ctx->device, 1, &ctx->frameFence);
+  }
   
   ImGui_ImplVulkan_Shutdown();
   ImGui_ImplSDL3_Shutdown();

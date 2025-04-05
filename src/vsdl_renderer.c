@@ -113,6 +113,117 @@ int vsdl_init_renderer(VSDL_Context* ctx) {
 }
 
 
+// Helper function to recreate swapchain-related resources
+static int recreate_swapchain(VSDL_Context* ctx) {
+  // Wait for the device to be idle before recreating resources
+  vkDeviceWaitIdle(ctx->device);
+
+  // Destroy old framebuffers
+  if (ctx->framebuffers) {
+      for (uint32_t i = 0; i < ctx->framebufferCount; i++) {
+          if (ctx->framebuffers[i] != VK_NULL_HANDLE) {
+              vkDestroyFramebuffer(ctx->device, ctx->framebuffers[i], NULL);
+          }
+      }
+      free(ctx->framebuffers);
+      ctx->framebuffers = NULL;
+  }
+
+  // Destroy old swapchain image views
+  if (ctx->swapchainImageViews) {
+      for (uint32_t i = 0; i < ctx->swapchainImageViewCount; i++) {
+          if (ctx->swapchainImageViews[i] != VK_NULL_HANDLE) {
+              vkDestroyImageView(ctx->device, ctx->swapchainImageViews[i], NULL);
+          }
+      }
+      free(ctx->swapchainImageViews);
+      ctx->swapchainImageViews = NULL;
+  }
+
+  // Free old swapchain images array
+  if (ctx->swapchainImages) {
+      free(ctx->swapchainImages);
+      ctx->swapchainImages = NULL;
+  }
+
+  // Get new window size
+  int width, height;
+  SDL_GetWindowSize(ctx->window, &width, &height);
+  if (width <= 0 || height <= 0) {
+      return 0; // Window minimized, skip recreation
+  }
+
+  // Recreate swapchain
+  VkSwapchainCreateInfoKHR swapchainInfo = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+  swapchainInfo.surface = ctx->surface;
+  swapchainInfo.minImageCount = 2;
+  swapchainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
+  swapchainInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+  swapchainInfo.imageExtent.width = (uint32_t)width;
+  swapchainInfo.imageExtent.height = (uint32_t)height;
+  swapchainInfo.imageArrayLayers = 1;
+  swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  swapchainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+  swapchainInfo.clipped = VK_TRUE;
+  swapchainInfo.oldSwapchain = ctx->swapchain; // Pass old swapchain for cleanup
+
+  VkSwapchainKHR newSwapchain;
+  if (vkCreateSwapchainKHR(ctx->device, &swapchainInfo, NULL, &newSwapchain) != VK_SUCCESS) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
+      return 0;
+  }
+  vkDestroySwapchainKHR(ctx->device, ctx->swapchain, NULL); // Destroy old swapchain
+  ctx->swapchain = newSwapchain;
+
+  // Get new swapchain images
+  vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, NULL);
+  ctx->swapchainImages = (VkImage*)malloc(ctx->swapchainImageCount * sizeof(VkImage));
+  vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, ctx->swapchainImages);
+  ctx->swapchainImageViewCount = ctx->swapchainImageCount;
+  ctx->swapchainExtent = swapchainInfo.imageExtent;
+
+  // Recreate swapchain image views
+  ctx->swapchainImageViews = (VkImageView*)malloc(ctx->swapchainImageViewCount * sizeof(VkImageView));
+  for (uint32_t i = 0; i < ctx->swapchainImageViewCount; i++) {
+      VkImageViewCreateInfo viewInfo = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      viewInfo.image = ctx->swapchainImages[i];
+      viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+      viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.subresourceRange.baseMipLevel = 0;
+      viewInfo.subresourceRange.levelCount = 1;
+      viewInfo.subresourceRange.baseArrayLayer = 0;
+      viewInfo.subresourceRange.layerCount = 1;
+      if (vkCreateImageView(ctx->device, &viewInfo, NULL, &ctx->swapchainImageViews[i]) != VK_SUCCESS) {
+          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain image view %u", i);
+          return 0;
+      }
+  }
+  SDL_Log("Swapchain image views recreated (count: %u)", ctx->swapchainImageViewCount);
+
+  // Recreate framebuffers
+  ctx->framebuffers = (VkFramebuffer*)malloc(ctx->swapchainImageCount * sizeof(VkFramebuffer));
+  for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
+      VkImageView attachments[] = {ctx->swapchainImageViews[i]};
+      VkFramebufferCreateInfo fbInfo = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+      fbInfo.renderPass = ctx->renderPass;
+      fbInfo.attachmentCount = 1;
+      fbInfo.pAttachments = attachments;
+      fbInfo.width = ctx->swapchainExtent.width;
+      fbInfo.height = ctx->swapchainExtent.height;
+      fbInfo.layers = 1;
+      if (vkCreateFramebuffer(ctx->device, &fbInfo, NULL, &ctx->framebuffers[i]) != VK_SUCCESS) {
+          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate framebuffer %u", i);
+          return 0;
+      }
+  }
+  ctx->framebufferCount = ctx->swapchainImageCount;
+  SDL_Log("Framebuffers recreated (count: %u)", ctx->framebufferCount);
+
+  return 1;
+}
 
 
 void vsdl_draw_frame(VSDL_Context* ctx) {
@@ -127,10 +238,19 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   // Acquire the next swapchain image
   uint32_t imageIndex;
   result = vkAcquireNextImageKHR(ctx->device, ctx->swapchain, UINT64_MAX, ctx->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-  if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+      if (!recreate_swapchain(ctx)) return;
+      result = vkAcquireNextImageKHR(ctx->device, ctx->swapchain, UINT64_MAX, ctx->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+      if (result != VK_SUCCESS) {
+          SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire next image after recreation: %d", result);
+          return;
+      }
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire next image: %d", result);
       return;
   }
+
+  
 
   // Reset the persistent command buffer
   result = vkResetCommandBuffer(ctx->commandBuffer, 0);
@@ -167,7 +287,7 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   vkCmdBindVertexBuffers(ctx->commandBuffer, 0, 1, vertexBuffers, offsets);
   vkCmdDraw(ctx->commandBuffer, 3, 1, 0, 0);
 
-  // Draw text (optional, if keeping custom text rendering)
+  // Draw text
   vsdl_render_text(ctx, ctx->commandBuffer, "Hello", -0.5f, -0.5f);
 
   // ImGui frame
@@ -175,7 +295,6 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   ImGui_ImplSDL3_NewFrame();
   igNewFrame();
 
-  // Example ImGui UI
   igBegin("Test Window", NULL, 0);
   igText("Hello, ImGui!");
   igEnd();
@@ -220,10 +339,11 @@ void vsdl_draw_frame(VSDL_Context* ctx) {
   presentInfo.pImageIndices = &imageIndex;
 
   result = vkQueuePresentKHR(ctx->graphicsQueue, &presentInfo);
-  if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+      recreate_swapchain(ctx);
+  } else if (result != VK_SUCCESS) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present queue: %d", result);
-      return;
   }
-}
 
+}
 
